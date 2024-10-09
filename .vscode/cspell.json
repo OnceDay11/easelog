@@ -1,0 +1,71 @@
+/* code spell checker configuration file */
+{
+  /* Version of the setting file.  Always 0.2 */
+  "version": "0.2",
+  /* language - current active spelling language */
+  "language": "en",
+  /* Enable / Disable the spell checker. */
+  "enabled": true,
+  /* Specify file types to spell check. */
+  "enabledLanguageIds": [
+    "c",
+    "python",
+    "cpp",
+    "shell",
+    "json",
+    "jsonc",
+    "markdown",
+    "plaintext"
+  ],
+  /* Controls the maximum number of spelling errors per document. */
+  "maxNumberOfProblems": 10000,
+  /* The maximum number of times the same word can be flagged as an error in a file. */
+  "maxDuplicateProblems": 999,
+  /* Controls the number of suggestions shown. */
+  "numSuggestions": 8,
+  /* The minimum length of a word before checking it against a dictionary. */
+  "minWordLength": 4,
+  /* Enable / Disable compound words like 'errormessage' */
+  "allowCompoundWords": false,
+  /* Specify paths/files to ignore. */
+  "ignorePaths": [
+    ".vscode" /* Ignore vscode configuration files. */,
+    ".git" /* Ignore the .git directory. */,
+    "*.o" /* Ignore all .o files */,
+    "*.dll" /* Ignore all .dll files. */,
+    "**/*.dll" /* Ignore all .dll files */
+  ],
+  /* Words to be ignored and not suggested. */
+  "ignoreWords": ["behaviour"],
+  "userWords": ["MCONFIG" /* Mconfig's macro */],
+  /* words - list of words to be always considered correct */
+  "words": [
+    "valgrind",
+    "easelog",
+    "cmocka",
+    "tickcount"
+  ],
+  /* flagWords - list of words to be always considered incorrect */
+  /* This is useful for offensive words and common spelling errors.*/
+  /* For example "hte" should be "the" */
+  "flagWords": ["hte"],
+  /* Determines if words must match case and accent rules.*/
+  /*- `false` - Case is ignored and accents can be missing on the entire word. */
+  /* Incorrect accents or partially missing accents will be marked as incorrect. */
+  /*- `true` - Case and accents are enforced. */
+  "caseSensitive": false,
+  /* Tells the spell checker to load `.gitignore` files */
+  /* and skip files that match the globs in the `.gitignore` files found. */
+  "useGitignore": true
+  /* Predefined exclude patterns */
+  /* (1) Urls1 -- Matches urls */
+  /* (2) HexValues -- Matches common hex format like #aaa, 0xfeef, \u0134 */
+  /* (3) EscapeCharacters1 -- matches special characters: \n, \t etc. */
+  /* (4) Base641 -- matches base64 blocks of text longer than 40 characters. */
+  /* (5) Email -- matches most email addresses. */
+  /* Predefined include Patterns */
+  /* (1) Everything1 -- By default we match an entire document and remove the excludes. */
+  /* (2) string -- This matches common string formats like '...', "...", and `...` */
+  /* (3) CStyleComment -- These are C Style comments / * * / and / / */
+  /* (4) PhpHereDoc -- This matches PHPHereDoc strings. */
+}

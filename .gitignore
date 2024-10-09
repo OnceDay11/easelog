@@ -30,3 +30,15 @@
 *.exe
 *.out
 *.app
+
+# 忽略build和output目录
+build/
+output/
+# 忽略cmake生成的文件
+compile_commands.json
+link.txt
+*.gcov
+# 忽略相关库文件
+library/
+# 忽略perf.data文件
+perf.data*
