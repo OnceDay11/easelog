@@ -230,49 +230,52 @@ void LogMessage::Flush()
         }
     });
 
-    // 移动到无锁队列中
-    uint32_t entry_idx = llqueue_dequeue(&g_log_free_queue);
-    if (entry_idx == LLQUEUE_NULL_IDX) {
-        // 如果队列满了, 则直接输出到标准错误
-        WriteToFd(STDERR_FILENO, str_newline.data(), str_newline.size());
-        return;
-    }
-
-    // 将日志信息写入到队列中
-    g_log_queue_entries[entry_idx].data = new std::string(str_newline);
-    llqueue_enqueue(&g_log_wait_queue, entry_idx);
-
-    // 上锁开始准备写日志
-    {
-        std::lock_guard< std::mutex > lock(g_log_mutex);
-        // 从队列中取出日志信息
-        entry_idx = llqueue_dequeue_all(&g_log_wait_queue);
-        while (entry_idx != LLQUEUE_NULL_IDX) {
-            // 生成时间戳
-            std::string timestamp;
-            LogSyslogPrefixTimestamp(log_settings, timestamp);
-            // 写入日志信息
-            WriteToFd(STDERR_FILENO, timestamp.data(), timestamp.size());
-            // 写入后续的日志信息
-            std::string *log_str = static_cast<std::string
-            *>(g_log_queue_entries[entry_idx].data); WriteToFd(STDERR_FILENO, log_str->data(),
-            log_str->size());
-            // 释放资源
-            delete log_str;
-            llqueue_enqueue(&g_log_free_queue, entry_idx);
-            entry_idx = llqueue_dequeue_all(&g_log_wait_queue);
-        }
-    }
-
-    // if (ShouldLogToStderr(severity_)) {
-    //     // 生成时间戳
-    //     std::string timestamp;
-    //     LogSyslogPrefixTimestamp(log_settings, timestamp);
-    //     RandomSleep();
-    //     // 写入日志信息
-    //     WriteToFd(STDERR_FILENO, timestamp.data(), timestamp.size());
+    // // 移动到无锁队列中
+    // uint32_t entry_idx = llqueue_dequeue(&g_log_free_queue);
+    // if (entry_idx == LLQUEUE_NULL_IDX) {
+    //     // 如果队列满了, 则直接输出到标准错误
     //     WriteToFd(STDERR_FILENO, str_newline.data(), str_newline.size());
+    //     return;
     // }
+
+    // // 将日志信息写入到队列中
+    // g_log_queue_entries[entry_idx].data = new std::string(str_newline);
+    // llqueue_enqueue(&g_log_wait_queue, entry_idx);
+
+    // // 上锁开始准备写日志
+    // {
+    //     std::lock_guard< std::mutex > lock(g_log_mutex);
+    //     // 从队列中取出日志信息
+    //     entry_idx = llqueue_dequeue_all(&g_log_wait_queue);
+    //     while (entry_idx != LLQUEUE_NULL_IDX) {
+    //         // 生成时间戳
+    //         std::string timestamp;
+    //         LogSyslogPrefixTimestamp(log_settings, timestamp);
+    //         // 引入随机延迟
+    //         RandomSleep();
+    //         // 写入日志信息
+    //         WriteToFd(STDERR_FILENO, timestamp.data(), timestamp.size());
+    //         // 写入后续的日志信息
+    //         std::string *log_str = static_cast<std::string
+    //         *>(g_log_queue_entries[entry_idx].data); WriteToFd(STDERR_FILENO, log_str->data(),
+    //         log_str->size());
+    //         // 释放资源
+    //         delete log_str;
+    //         llqueue_enqueue(&g_log_free_queue, entry_idx);
+    //         entry_idx = llqueue_dequeue_all(&g_log_wait_queue);
+    //     }
+    // }
+
+    if (ShouldLogToStderr(severity_)) {
+        std::lock_guard< std::mutex > lock(g_log_mutex);
+        // 生成时间戳
+        std::string timestamp;
+        LogSyslogPrefixTimestamp(log_settings, timestamp);
+        RandomSleep();
+        // 写入日志信息
+        WriteToFd(STDERR_FILENO, timestamp.data(), timestamp.size());
+        WriteToFd(STDERR_FILENO, str_newline.data(), str_newline.size());
+    }
 
     // if ((log_settings.log_dest & LOG_TO_FILE) != 0) {
     //     // If the client app did not call InitLogging() and the lock has not
