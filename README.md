@@ -6,9 +6,7 @@ Author：Once Day	Date：2024年10月8日
 
 
 
-#### 1. 设计概述
-
-##### 1.1 功能定义
+#### 1. 功能定义
 
 (1) 支持日志级别分类：DEBUG、INFO、WARNING、ERROR，可选支持FATAL。
 
@@ -16,7 +14,7 @@ Author：Once Day	Date：2024年10月8日
 
 (3) 支持多线程：要求时间戳不能乱序，性能方面没有特别要求。
 
-##### 1.2 实现分析
+#### 2. 实现分析
 
 一般常见的日志是Debug日志，或者说程序错误日志，典型代表是Linux环境下的`syslog`接口，其满足上述的要求。多线程依靠锁来避免时序问题，性能一般，但拓展性和可读性很好，以文本的形式保存和呈现。
 
@@ -53,3 +51,67 @@ Author：Once Day	Date：2024年10月8日
 - 低并发度下采取上述的互斥锁方法，这样节省线程资源，性能相对也会更好(减少线程切换)。
 - 高并发度下采取单独日志线程的方法，优先保证业务的并发处理能力，避免日志堵塞，全局效果更优。
 
+#### 3. 实际测试
+
+目前只实现了基础功能：**低并发度下采取互斥锁**，更上层的复杂日志宏API暂未实现。
+
+测试方面通过创建三个线程来模拟并发日志写入，为了更容易触发乱序，引入随机Sleep操作，在日志格式化和实际写入操作之间，如下所示:
+
+```c++
+// 用于构造并发时序, 随机等待 10-50ms
+void RandomSleep()
+{
+    if (g_log_enable_random_sleep) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10 + rand() % 40));
+    }
+}
+
+// 创建的线程重复20次输出日志
+std::thread t1([]() {
+    pthread_setname_np(pthread_self(), "thread1");
+    for (int i = 0; i < REPEAT_TIMES; i++) {
+        LOG(INFO) << "log message test: " << i;
+    }
+});
+
+// 没有锁保护下的直接日志写入
+if (ShouldLogToStderr(severity_)) {
+    // 生成时间戳
+    std::string timestamp;
+    LogSyslogPrefixTimestamp(log_settings, timestamp);
+    // 引入随机延迟
+    RandomSleep();
+    // 写入日志信息
+    WriteToFd(STDERR_FILENO, timestamp.data(), timestamp.size());
+    WriteToFd(STDERR_FILENO, str_newline.data(), str_newline.size());
+}
+```
+
+运行后，可以在输出日志里发现明显的乱序情况，如下:
+
+![c5b44b75-2d69-4be3-b68c-70693f677099](./README.assets/c5b44b75-2d69-4be3-b68c-70693f677099.jpeg)
+
+引入互斥锁后，可以避免乱序:
+
+```c++
+if (ShouldLogToStderr(severity_)) {
+    std::lock_guard< std::mutex > lock(g_log_mutex);
+    // 生成时间戳
+    std::string timestamp;
+    LogSyslogPrefixTimestamp(log_settings, timestamp);
+    RandomSleep();
+    // 写入日志信息
+    WriteToFd(STDERR_FILENO, timestamp.data(), timestamp.size());
+    WriteToFd(STDERR_FILENO, str_newline.data(), str_newline.size());
+}
+```
+
+运行截图如下:
+
+![image-20241010230920598](./README.assets/image-20241010230920598.png)
+
+但对性能影响较大，整体运行时间较没有上锁，增加了2倍，因为线程需要互相等待对方sleep结束才能拿到锁。
+
+不过，实际运行的程序很少会出现这么久的锁内延迟时间，这毕竟只是一个测试模拟情况。
+
+下一步准备实现第二种模式：**高并发度下采取单独日志线程**。
