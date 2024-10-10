@@ -131,7 +131,7 @@ set(CXX_FLAGS
     -Wpointer-arith         # 指针运算
     -Wwrite-strings         # 字符串常量
     -Woverlength-strings    # 字符串常量
-    -Wpedantic              # 严格遵循ISO C/C++标准，检查编译器扩展语法
+    # -Wpedantic              # 严格遵循ISO C/C++标准，检查编译器扩展语法
     -Wformat-overflow=2     # 格式化字符串溢出
     -Wformat=2              # 格式化字符串
     -Wformat-truncation=2   # 格式化字符串截断

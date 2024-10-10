@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2024 Once Day <once_day@qq.com>, All rights reserved.
  *
- * @FilePath: /easelog/src/easelog_private.h
+ * @FilePath: /easelog/log/easelog_private.h
  * @Author: Once Day <once_day@qq.com>.
  * @Date: 2024-10-09 22:49
  * @info: Encoder=utf-8,Tabsize=4,Eol=\n.
@@ -21,6 +21,8 @@
 #include <utility>
 #include <type_traits>
 #include <functional>
+
+namespace logging {
 
 // This provides a wrapper around system calls which may be interrupted by a
 // signal and return EINTR. See man 7 signal.
@@ -126,5 +128,10 @@ static inline uint64_t TickCountUs()
 
     return absolute_us;
 }
+
+// 用于构造并发时序, 随机等待 10-50ms
+void RandomSleep();
+
+}    // namespace logging
 
 #endif    // EASELOG_PRIVATE_H_

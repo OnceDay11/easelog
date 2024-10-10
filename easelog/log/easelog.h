@@ -140,6 +140,9 @@ void SetLogItems(bool enable_process_id, bool enable_thread_id, bool enable_time
 // Logging defaults to no prefix.
 void SetLogPrefix(const char *prefix);
 
+// Generates a timestamp string for the log message.
+void LogSyslogPrefixTimestamp(const LoggingSettings &log_settings, std::string &timestamp);
+
 // This class more or less represents a particular log message.  You
 // create an instance of LogMessage and then stream stuff to it.
 // When you finish streaming to it, ~LogMessage is called and the
@@ -151,10 +154,10 @@ void SetLogPrefix(const char *prefix);
 class LogMessage {
 public:
     // Used for LOG(severity).
-    LogMessage(const char *file, int line, LogSeverity severity);
+    LogMessage(const char *file, const char *func, int line, LogSeverity severity);
 
     // Used for CHECK().  Implied severity = LOGGING_FATAL.
-    LogMessage(const char *file, int line, const char *condition);
+    LogMessage(const char *file, const char *func, int line, const char *condition);
 
     // Delete copy constructor and assignment operator.
     LogMessage(const LogMessage &)            = delete;
@@ -169,13 +172,15 @@ public:
 
     const char *file() const { return file_; }
 
+    const char *func() const { return func_; }
+
     int line() const { return line_; }
 
 protected:
     void Flush();
 
 private:
-    void Init(const char *file, int line);
+    void Init(const char *file, const char *func, int line);
     void InitWithSyslogPrefix(const LoggingSettings &settings);
 
     void HandleFatal(size_t stack_start, const std::string &str_newline) const;
@@ -185,6 +190,7 @@ private:
     size_t             message_start_;
     // The file and line information passed in to the constructor.
     const char        *file_;
+    const char        *func_;
     const int32_t      line_;
     const LogSeverity  severity_;
 };
@@ -206,15 +212,6 @@ public:
 #define LAZY_STREAM(stream, condition) \
     !(condition) ? (void)0 : ::logging::LogMessageVoidify() & (stream)
 
-// A few definitions of macros that don't generate much code. These are used
-// by LOG() and LOG_IF, etc. Since these are used all over our code, it's
-// better to have compact code for these operations.
-#define COMPACT_LOG_DEBUG(...)   ::logging::LogMessage(__FILE__, __LINE__, ##__VA_ARGS__)
-#define COMPACT_LOG_INFO(...)    ::logging::LogMessage(__FILE__, __LINE__, ##__VA_ARGS__)
-#define COMPACT_LOG_WARNING(...) ::logging::LogMessage(__FILE__, __LINE__, ##__VA_ARGS__)
-#define COMPACT_LOG_ERROR(...)   ::logging::LogMessage(__FILE__, __LINE__, ##__VA_ARGS__)
-// #define COMPACT_LOG_FATAL(...)   ::logging::LogMessageFatal(__FILE__, __LINE__, ##__VA_ARGS__)
-
 // As special cases, we can assume that LOG_IS_ON(FATAL) always holds. Also,
 // LOG_IS_ON(DFATAL) always holds in debug mode. In particular, CHECK()s will
 // always fire if they fail.
@@ -230,9 +227,10 @@ public:
 // impossible to stream something like a string directly to an unnamed
 // ostream. We employ a neat hack by calling the stream() member
 // function of LogMessage which seems to avoid the problem.
-#define LOG_STREAM(severity) COMPACT_LOG_##severity(::logging::LOGGING_##severity).stream()
+#define LOG_STREAM(severity) \
+    ::logging::LogMessage(__FILE__, __func__, __LINE__, ::logging::LOGGING_##severity).stream()
 // 基础日志类型, 直接日志输出.
-#define LOG(severity)        LAZY_STREAM(LOG_STREAM(severity), LOG_IS_ON(severity))
+#define LOG(severity) LAZY_STREAM(LOG_STREAM(severity), LOG_IS_ON(severity))
 // 拓展日志类型, 简单条件日志输出.
 #define LOG_IF(severity, condition) \
     LAZY_STREAM(LOG_STREAM(severity), LOG_IS_ON(severity) && (condition))

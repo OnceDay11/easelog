@@ -24,6 +24,7 @@
 #include <sstream>
 #include <string>
 #include <optional>
+#include <thread>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -73,8 +74,53 @@ TEST(LoggingTestBase, BasicPerformance)
 
     uint64_t end_time = TickCountUs();
 
-    std::cout << "Performance test: 1000 times * " << (end_time - start_time) / REPEAT_TIMES
-              << " us" << std::endl;
+    std::cout << "Performance test: " << REPEAT_TIMES << "times * "
+              << (end_time - start_time) / REPEAT_TIMES << " us" << std::endl;
+}
+
+#undef REPEAT_TIMES
+#define REPEAT_TIMES 20
+
+static bool g_log_enable_random_sleep = false;
+
+// 用于构造并发时序, 随机等待 10-50ms
+void RandomSleep()
+{
+    if (g_log_enable_random_sleep) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10 + rand() % 40));
+    }
+}
+
+// 测试多线程写日志
+TEST(LoggingTestBase, MultiThreadLogging)
+{
+    g_log_enable_random_sleep = true;
+
+    // 线程名字 thread1, thread2, thread3
+    std::thread t1([]() {
+        pthread_setname_np(pthread_self(), "thread1");
+        for (int i = 0; i < REPEAT_TIMES; i++) {
+            LOG(INFO) << "log message test: " << i;
+        }
+    });
+
+    std::thread t2([]() {
+        pthread_setname_np(pthread_self(), "thread2");
+        for (int i = 0; i < REPEAT_TIMES; i++) {
+            LOG(INFO) << "log message test: " << i;
+        }
+    });
+
+    std::thread t3([]() {
+        pthread_setname_np(pthread_self(), "thread3");
+        for (int i = 0; i < REPEAT_TIMES; i++) {
+            LOG(INFO) << "log message test: " << i;
+        }
+    });
+
+    t1.join();
+    t2.join();
+    t3.join();
 }
 
 }    // namespace logging

@@ -48,9 +48,10 @@ static inline ProcessId GetCurrentProcessId()
     return g_process_pid;
 }
 
+// Get the program name of the current process.
 static inline const char *GetProgramName(void)
 {
-    return program_invocation_short_name ? program_invocation_short_name : "";
+    return program_invocation_short_name ? program_invocation_short_name : "(unknown)";
 }
 
 // Get the process ID of the current thread.
@@ -77,6 +78,33 @@ static const char *log_severity_name(const LoggingSettings &log_settings, int32_
     return "Unknown";
 }
 
+void LogSyslogPrefixTimestamp(const LoggingSettings &log_settings, std::string &timestamp)
+{
+    std::ostringstream stream;
+
+    if (log_settings.log_timestamp) {
+        timeval tv{};
+        gettimeofday(&tv, nullptr);
+        time_t t = tv.tv_sec;
+
+        struct tm utc_time { };
+
+        localtime_r(&t, &utc_time);
+        stream << std::setfill('0')                                          // Set fill to 0
+               << std::setw(4) << 1900 + utc_time.tm_year << '-'             // year
+               << std::setw(2) << 1 + utc_time.tm_mon << '-'                 // month
+               << std::setw(2) << utc_time.tm_mday                           // date
+               << 'T' << std::setw(2) << utc_time.tm_hour << ':'             // hour
+               << std::setw(2) << utc_time.tm_min << ':'                     // minute
+               << std::setw(2) << utc_time.tm_sec << '.'                     // second
+               << std::setw(6) << tv.tv_usec                                 // millisecond
+               << '+' << std::setw(2) << utc_time.tm_gmtoff / 3600 << ':'    // timezone hour
+               << std::setw(2) << utc_time.tm_gmtoff % 3600 << ' ';          // timezone second
+    }
+
+    timestamp = stream.str();
+}
+
 // base style log prefix, eg.
 // [unknown_pid:unknown_tid:0826/145119.098911:19408886280525:info:logging_unittest.cpp(66)]
 // log message
@@ -86,25 +114,6 @@ static void InitSyslogPrefixWithBaseStyle(LogMessage &log, const LoggingSettings
 
     if (log_settings.log_prefix) {
         stream_ << log_settings.log_prefix << ':';
-    }
-    if (log_settings.log_timestamp) {
-        timeval tv{};
-        gettimeofday(&tv, nullptr);
-        time_t t = tv.tv_sec;
-
-        struct tm utc_time { };
-
-        localtime_r(&t, &utc_time);
-        stream_ << std::setfill('0')                                          // Set fill to 0
-                << std::setw(4) << 1900 + utc_time.tm_year << '-'             // year
-                << std::setw(2) << 1 + utc_time.tm_mon << '-'                 // month
-                << std::setw(2) << utc_time.tm_mday                           // date
-                << 'T' << std::setw(2) << utc_time.tm_hour << ':'             // hour
-                << std::setw(2) << utc_time.tm_min << ':'                     // minute
-                << std::setw(2) << utc_time.tm_sec << '.'                     // second
-                << std::setw(6) << tv.tv_usec                                 // millisecond
-                << '+' << std::setw(2) << utc_time.tm_gmtoff / 3600 << ':'    // timezone hour
-                << std::setw(2) << utc_time.tm_gmtoff % 3600 << ' ';          // timezone second
     }
     if (log_settings.log_tickcount) {
         stream_ << TickCountUs() << ' ';
@@ -128,7 +137,7 @@ static void InitSyslogPrefixWithBaseStyle(LogMessage &log, const LoggingSettings
         pthread_getname_np(pthread_self(), thread_name, sizeof(thread_name));
         stream_ << thread_name << '(' << GetCurrentThreadId() << ") - ";
     }
-    stream_ << log.file() << '(' << log.line() << ")] ";
+    stream_ << log.file() << '(' << log.func() << '-' << log.line() << ")] ";
 }
 
 void LogMessage::InitWithSyslogPrefix(const LoggingSettings &settings)

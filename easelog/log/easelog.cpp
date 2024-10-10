@@ -33,6 +33,9 @@
 #include <ostream>
 #include <string>
 #include <utility>
+#include <mutex>
+
+#include "log/easelog_llqueue.h"
 
 namespace logging {
 
@@ -73,6 +76,25 @@ const struct LoggingSettings &GetLoggingSettings()
 // operator.
 std::ostream *g_swallow_stream = nullptr;
 
+// 定义无锁队列
+#define ASYNC_QUEUE_SIZE 4096
+static struct llqueue       g_log_free_queue;
+static struct llqueue       g_log_wait_queue;
+static struct llqueue_entry g_log_queue_entries[ASYNC_QUEUE_SIZE];
+
+// 初始化日志队列
+void InitLoggingQueue()
+{
+    llqueue_init(&g_log_free_queue, g_log_queue_entries, ASYNC_QUEUE_SIZE);
+    llqueue_init(&g_log_wait_queue, g_log_queue_entries, ASYNC_QUEUE_SIZE);
+    for (uint32_t i = 0; i < ASYNC_QUEUE_SIZE; i++) {
+        llqueue_enqueue(&g_log_free_queue, i);
+    }
+}
+
+// 全局互斥锁
+static std::mutex g_log_mutex;
+
 // export: 日志初始化函数, 用于设置日志配置
 bool BaseInitLoggingImpl(const LoggingSettings &settings)
 {
@@ -83,17 +105,6 @@ bool BaseInitLoggingImpl(const LoggingSettings &settings)
     if ((log_settings.log_dest & LOG_TO_FILE) == 0) {
         return true;
     }
-
-    // #if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
-    //     base::AutoLock guard(GetLoggingLock());
-    // #endif
-
-    // Calling InitLogging twice or after some log call has already opened the
-    // default log file will re-initialize to the new options.
-    // CloseLogFileUnlocked();
-
-    // CHECK(!settings.log_file_path.empty(), base::NotFatalUntil::M127)
-    //     << "LOG_TO_FILE set but no log_file_path!";
 
     if (!log_settings.log_file_path) {
         log_settings.log_file_path = new std::string("debug.log");
@@ -175,17 +186,17 @@ static void WriteToFd(int fd, const char *data, size_t length)
 }
 
 // 构造函数: 从文件名和行号构造日志消息, 需要指定日志等级
-LogMessage::LogMessage(const char *file, int line, LogSeverity severity)
-    : file_(file), line_(line), severity_(severity)
+LogMessage::LogMessage(const char *file, const char *func, int line, LogSeverity severity)
+    : file_(file), func_(func), line_(line), severity_(severity)
 {
-    Init(file, line);
+    Init(file, func, line);
 }
 
 // 构造函数: 从文件名和行号构造日志消息, 默认日志等级Fatal, 需要指定判断条件, 用于CHECK宏.
-LogMessage::LogMessage(const char *file, int line, const char *condition)
-    : file_(file), line_(line), severity_(LOGGING_FATAL)
+LogMessage::LogMessage(const char *file, const char *func, int line, const char *condition)
+    : file_(file), func_(func), line_(line), severity_(LOGGING_FATAL)
 {
-    Init(file, line);
+    Init(file, func, line);
     stream_ << "Check failed: " << condition << ". ";
 }
 
@@ -219,28 +230,76 @@ void LogMessage::Flush()
         }
     });
 
-    if (ShouldLogToStderr(severity_)) {
+    // 移动到无锁队列中
+    uint32_t entry_idx = llqueue_dequeue(&g_log_free_queue);
+    if (entry_idx == LLQUEUE_NULL_IDX) {
+        // 如果队列满了, 则直接输出到标准错误
         WriteToFd(STDERR_FILENO, str_newline.data(), str_newline.size());
+        return;
     }
 
-    if ((log_settings.log_dest & LOG_TO_FILE) != 0) {
-        // If the client app did not call InitLogging() and the lock has not
-        // been created it will be done now on calling GetLoggingLock(). We do this
-        // on demand, but if two threads try to do this at the same time, there will
-        // be a race condition to create the lock. This is why InitLogging should be
-        // called from the main thread at the beginning of execution.
+    // 将日志信息写入到队列中
+    g_log_queue_entries[entry_idx].data = new std::string(str_newline);
+    llqueue_enqueue(&g_log_wait_queue, entry_idx);
 
-        // base::AutoLock guard(GetLoggingLock());
-        // if (InitializeLogFileHandle()) {
-        //     fwrite(str_newline.data(), str_newline.size(), 1, log_settings.log_file);
-        //     fflush(log_settings.log_file);
-        // }
+    // 上锁开始准备写日志
+    {
+        std::lock_guard< std::mutex > lock(g_log_mutex);
+        // 从队列中取出日志信息
+        entry_idx = llqueue_dequeue_all(&g_log_wait_queue);
+        while (entry_idx != LLQUEUE_NULL_IDX) {
+            // 生成时间戳
+            std::string timestamp;
+            LogSyslogPrefixTimestamp(log_settings, timestamp);
+            // 写入日志信息
+            WriteToFd(STDERR_FILENO, timestamp.data(), timestamp.size());
+            // 写入后续的日志信息
+            std::string *log_str = static_cast<std::string
+            *>(g_log_queue_entries[entry_idx].data); WriteToFd(STDERR_FILENO, log_str->data(),
+            log_str->size());
+            // 释放资源
+            delete log_str;
+            llqueue_enqueue(&g_log_free_queue, entry_idx);
+            entry_idx = llqueue_dequeue_all(&g_log_wait_queue);
+        }
     }
+
+    // if (ShouldLogToStderr(severity_)) {
+    //     // 生成时间戳
+    //     std::string timestamp;
+    //     LogSyslogPrefixTimestamp(log_settings, timestamp);
+    //     RandomSleep();
+    //     // 写入日志信息
+    //     WriteToFd(STDERR_FILENO, timestamp.data(), timestamp.size());
+    //     WriteToFd(STDERR_FILENO, str_newline.data(), str_newline.size());
+    // }
+
+    // if ((log_settings.log_dest & LOG_TO_FILE) != 0) {
+    //     // If the client app did not call InitLogging() and the lock has not
+    //     // been created it will be done now on calling GetLoggingLock(). We do this
+    //     // on demand, but if two threads try to do this at the same time, there will
+    //     // be a race condition to create the lock. This is why InitLogging should be
+    //     // called from the main thread at the beginning of execution.
+
+    //     // base::AutoLock guard(GetLoggingLock());
+    //     // if (InitializeLogFileHandle()) {
+    //     //     fwrite(str_newline.data(), str_newline.size(), 1, log_settings.log_file);
+    //     //     fflush(log_settings.log_file);
+    //     // }
+    // }
 }
 
 // writes the common header info to the stream
-void LogMessage::Init(const char *file, int line)
+void LogMessage::Init(const char *file, const char *func, int line)
 {
+    static bool g_log_init = false;
+
+    // 初始化日志队列
+    if (UNLIKELY(!g_log_init)) {
+        g_log_init = true;
+        InitLoggingQueue();
+    }
+
     // Don't let actions from this method affect the system error after returning.
     ScopedClearLastError scoped_clear_last_error;
 

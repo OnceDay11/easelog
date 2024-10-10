@@ -3,6 +3,7 @@
 set(base_srcs
     log/easelog.cpp
     log/easelog_prefix.cpp
+    log/easelog_llqueue.cpp
 )
 
 # 添加测试可执行文件, 按照字母序排序
